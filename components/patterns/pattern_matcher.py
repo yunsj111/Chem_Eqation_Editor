@@ -6,9 +6,14 @@ from rdkit.Chem import Draw, AllChem, Descriptors
 from PIL import Image
 import io
 import base64
+import sys
+import os
+
+# 프로젝트 루트를 Python 경로에 추가
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from models.molecule import Molecule
-from components.utils import mol_to_image, image_to_base64, validate_smarts
+from components.drawing.utils import mol_to_image, image_to_base64, validate_smarts
 
 class PatternMatcher:
     """SMARTS 패턴 매칭 기능"""

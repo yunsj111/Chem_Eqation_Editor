@@ -2,11 +2,16 @@ import streamlit as st
 from typing import List, Dict, Optional, Tuple
 import networkx as nx
 from rdkit import Chem
+import sys
+import os
+
+# 프로젝트 루트를 Python 경로에 추가
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from models.molecule import Molecule
 from models.atom import Atom, AtomType, AtomQuery
 from models.bond import Bond, BondType, BondQuery
-from components.utils import validate_smarts
+from components.drawing.utils import validate_smarts
 
 class SmartsGenerator:
     """SMARTS 패턴 생성기"""
