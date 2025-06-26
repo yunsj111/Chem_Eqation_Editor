@@ -7,6 +7,10 @@ from typing import List, Dict, Optional, Tuple, Any
 import math
 import json
 
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
 from models.molecule import Molecule
 from models.atom import Atom, AtomType, AtomQuery
 from models.bond import Bond, BondType, BondQuery
@@ -217,6 +221,23 @@ class MoleculeDrawer:
         return canvas_result
 
     def create_canvas(self):
+        """캔버스 생성 - 라이브러리 선택"""
+        
+        # 라이브러리 선택 옵션 추가
+        canvas_type = st.selectbox(
+            "🎨 렌더링 방식 선택:",
+            ["Plotly (기본)", "Matplotlib (추천)", "PIL/Pillow"],
+            key="canvas_type"
+        )
+        
+        if canvas_type == "Matplotlib (추천)":
+            return self.create_canvas_matplotlib()
+        elif canvas_type == "PIL/Pillow":
+            return self.create_canvas_pil()
+        else:
+            return self.create_canvas_plotly()
+
+    def create_canvas_plotly(self):
         """그리기 캔버스 생성 (개선된 버전)"""
         # 현재 분자 데이터 로드
         self.load_molecule_from_session()
@@ -989,3 +1010,259 @@ class MoleculeDrawer:
         """현재 분자 객체 반환"""
         self.load_molecule_from_session()
         return self.molecule
+        
+    def create_canvas_matplotlib(self):
+            """Matplotlib을 사용한 캔버스 생성"""
+            # 현재 분자 데이터 로드
+            self.load_molecule_from_session()
+            
+            # Figure 생성
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.set_xlim(0, self.canvas_width)
+            ax.set_ylim(0, self.canvas_height)
+            ax.set_aspect('equal')
+            ax.invert_yaxis()  # Y축 뒤집기 (화면 좌표계와 맞춤)
+            
+            # 격자 배경
+            for i in range(0, self.canvas_width, 50):
+                ax.axvline(x=i, color='lightgray', linewidth=0.5, alpha=0.5)
+            for i in range(0, self.canvas_height, 50):
+                ax.axhline(y=i, color='lightgray', linewidth=0.5, alpha=0.5)
+            
+            # 결합 그리기 (원자보다 먼저)
+            self.draw_bonds_matplotlib(ax)
+            
+            # 원자 그리기
+            self.draw_atoms_matplotlib(ax)
+            
+            # 선택된 원자 하이라이트
+            if (st.session_state.drawing_mode == 'bond' and 
+                st.session_state.temp_bond_start_id is not None):
+                start_atom = self.get_atom_by_id(st.session_state.temp_bond_start_id)
+                if start_atom:
+                    highlight = patches.Circle(
+                        (start_atom['x'], start_atom['y']), 
+                        radius=20, 
+                        facecolor='rgba(255,0,0,0.3)', 
+                        edgecolor='red', 
+                        linewidth=3,
+                        alpha=0.5
+                    )
+                    ax.add_patch(highlight)
+            
+            # 축 숨기기
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            
+            # 캔버스 경계
+            border = patches.Rectangle(
+                (0, 0), self.canvas_width, self.canvas_height,
+                linewidth=2, edgecolor='gray', facecolor='none'
+            )
+            ax.add_patch(border)
+            
+            plt.tight_layout()
+            
+            # Streamlit에 표시
+            st.pyplot(fig)
+            plt.close()
+            
+            # 디버깅 정보 표시
+            if st.session_state.molecule_data['atoms']:
+                st.write(f"**디버그**: {len(st.session_state.molecule_data['atoms'])}개의 원자가 표시되었습니다.")
+                for i, atom in enumerate(st.session_state.molecule_data['atoms'][:3]):
+                    st.write(f"원자 {i+1}: {atom['element']} at ({atom['x']:.1f}, {atom['y']:.1f})")
+            
+            return fig
+
+    def draw_atoms_matplotlib(self, ax):
+        """Matplotlib으로 원자 그리기"""
+        atoms = st.session_state.molecule_data['atoms']
+        
+        for atom_data in atoms:
+            try:
+                color = get_atom_color(atom_data['element'])
+                
+                # 원자 원 그리기
+                circle = patches.Circle(
+                    (atom_data['x'], atom_data['y']), 
+                    radius=15, 
+                    facecolor=color, 
+                    edgecolor='black', 
+                    linewidth=2
+                )
+                ax.add_patch(circle)
+                
+                # 원소 기호 텍스트
+                text_color = 'white' if color not in ['#FFFFFF', '#FFFF00'] else 'black'
+                ax.text(
+                    atom_data['x'], atom_data['y'], 
+                    atom_data.get('display_text', atom_data['element']),
+                    ha='center', va='center', 
+                    fontsize=12, fontweight='bold',
+                    color=text_color
+                )
+            except Exception as e:
+                st.error(f"원자 그리기 오류 (ID: {atom_data['id']}): {e}")
+
+    def draw_bonds_matplotlib(self, ax):
+        """Matplotlib으로 결합 그리기"""
+        bonds = st.session_state.molecule_data['bonds']
+        
+        for bond_data in bonds:
+            try:
+                atom1 = self.get_atom_by_id(bond_data['atom1_id'])
+                atom2 = self.get_atom_by_id(bond_data['atom2_id'])
+                
+                if atom1 and atom2:
+                    bond_type = BondType(bond_data['bond_type'])
+                    
+                    if bond_type == BondType.SINGLE:
+                        ax.plot([atom1['x'], atom2['x']], [atom1['y'], atom2['y']], 
+                            'k-', linewidth=2)
+                    
+                    elif bond_type == BondType.DOUBLE:
+                        # 이중 결합: 두 평행선
+                        dx = atom2['x'] - atom1['x']
+                        dy = atom2['y'] - atom1['y']
+                        length = np.sqrt(dx**2 + dy**2)
+                        
+                        if length > 0:
+                            ux, uy = -dy/length, dx/length
+                            offset = 3
+                            
+                            ax.plot([atom1['x'] + ux*offset, atom2['x'] + ux*offset], 
+                                [atom1['y'] + uy*offset, atom2['y'] + uy*offset], 
+                                'k-', linewidth=2)
+                            ax.plot([atom1['x'] - ux*offset, atom2['x'] - ux*offset], 
+                                [atom1['y'] - uy*offset, atom2['y'] - uy*offset], 
+                                'k-', linewidth=2)
+                    
+                    elif bond_type == BondType.TRIPLE:
+                        # 삼중 결합: 세 평행선
+                        ax.plot([atom1['x'], atom2['x']], [atom1['y'], atom2['y']], 
+                            'k-', linewidth=2)
+                        
+                        dx = atom2['x'] - atom1['x']
+                        dy = atom2['y'] - atom1['y']
+                        length = np.sqrt(dx**2 + dy**2)
+                        
+                        if length > 0:
+                            ux, uy = -dy/length, dx/length
+                            offset = 4
+                            
+                            ax.plot([atom1['x'] + ux*offset, atom2['x'] + ux*offset], 
+                                [atom1['y'] + uy*offset, atom2['y'] + uy*offset], 
+                                'k-', linewidth=2)
+                            ax.plot([atom1['x'] - ux*offset, atom2['x'] - ux*offset], 
+                                [atom1['y'] - uy*offset, atom2['y'] - uy*offset], 
+                                'k-', linewidth=2)
+                    
+                    elif bond_type == BondType.AROMATIC:
+                        # 방향족 결합: 점선
+                        ax.plot([atom1['x'], atom2['x']], [atom1['y'], atom2['y']], 
+                            'k:', linewidth=2)
+                    
+                    elif bond_type == BondType.ANY:
+                        # 임의 결합: 점선
+                        ax.plot([atom1['x'], atom2['x']], [atom1['y'], atom2['y']], 
+                            color='gray', linestyle='dashdot', linewidth=3)
+                            
+            except Exception as e:
+                st.error(f"결합 그리기 오류 (ID: {bond_data['id']}): {e}")
+
+    def create_canvas_pil(self):
+        """PIL을 사용한 캔버스 생성 (선택사항)"""
+        from PIL import Image, ImageDraw, ImageFont
+        
+        # 빈 이미지 생성
+        img = Image.new('RGB', (self.canvas_width, self.canvas_height), 'white')
+        draw = ImageDraw.Draw(img)
+        
+        # 격자 그리기
+        for i in range(0, self.canvas_width, 50):
+            draw.line([(i, 0), (i, self.canvas_height)], fill='lightgray', width=1)
+        for i in range(0, self.canvas_height, 50):
+            draw.line([(0, i), (self.canvas_width, i)], fill='lightgray', width=1)
+        
+        # 결합 그리기
+        self.draw_bonds_pil(draw)
+        
+        # 원자 그리기
+        self.draw_atoms_pil(draw)
+        
+        # 테두리
+        draw.rectangle([(0, 0), (self.canvas_width-1, self.canvas_height-1)], 
+                    outline='gray', width=2)
+        
+        # Streamlit에 표시
+        st.image(img, use_column_width=True)
+        
+        return img
+
+    def draw_atoms_pil(self, draw):
+        """PIL로 원자 그리기"""
+        try:
+            # 기본 폰트 사용
+            font = None
+        except:
+            font = None
+        
+        atoms = st.session_state.molecule_data['atoms']
+        
+        for atom_data in atoms:
+            x, y = int(atom_data['x']), int(atom_data['y'])
+            color = get_atom_color(atom_data['element'])
+            
+            # 원자 원 그리기
+            radius = 15
+            draw.ellipse([x-radius, y-radius, x+radius, y+radius], 
+                        fill=color, outline='black', width=2)
+            
+            # 원소 기호
+            text = atom_data.get('display_text', atom_data['element'])
+            text_color = 'white' if color not in ['#FFFFFF', '#FFFF00'] else 'black'
+            
+            # 텍스트 크기 추정 (대략적)
+            text_width = len(text) * 8
+            text_height = 12
+            
+            draw.text((x - text_width//2, y - text_height//2), 
+                    text, fill=text_color, font=font)
+
+    def draw_bonds_pil(self, draw):
+        """PIL로 결합 그리기"""
+        bonds = st.session_state.molecule_data['bonds']
+        
+        for bond_data in bonds:
+            atom1 = self.get_atom_by_id(bond_data['atom1_id'])
+            atom2 = self.get_atom_by_id(bond_data['atom2_id'])
+            
+            if atom1 and atom2:
+                bond_type = BondType(bond_data['bond_type'])
+                x1, y1 = int(atom1['x']), int(atom1['y'])
+                x2, y2 = int(atom2['x']), int(atom2['y'])
+                
+                if bond_type == BondType.SINGLE:
+                    draw.line([(x1, y1), (x2, y2)], fill='black', width=2)
+                
+                elif bond_type == BondType.DOUBLE:
+                    # 이중 결합 구현
+                    dx = x2 - x1
+                    dy = y2 - y1
+                    length = (dx**2 + dy**2)**0.5
+                    
+                    if length > 0:
+                        ux, uy = -dy/length, dx/length
+                        offset = 3
+                        
+                        draw.line([(x1 + int(ux*offset), y1 + int(uy*offset)), 
+                                (x2 + int(ux*offset), y2 + int(uy*offset))], 
+                                fill='black', width=2)
+                        draw.line([(x1 - int(ux*offset), y1 - int(uy*offset)), 
+                                (x2 - int(ux*offset), y2 - int(uy*offset))], 
+                                fill='black', width=2)
+                
+                # 다른 결합 타입들도 비슷하게 구현...

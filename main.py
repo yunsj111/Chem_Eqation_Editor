@@ -463,14 +463,15 @@ def main():
         # 현재 분자 로드
         drawer = MoleculeDrawer()
         drawer.initialize_session_state()
-        molecule = drawer.get_molecule()
-
-        if not molecule.atoms:
+        
+        # 분자 데이터 확인 (get_molecule() 대신)
+        if not st.session_state.molecule_data['atoms']:
             st.warning("⚠️ 먼저 분자를 그려주세요!")
             st.info("분자 그리기 페이지로 이동하여 분자를 그린 후 다시 시도하세요.")
         else:
             generator = SmartsGenerator()
-            smarts = generator.create_smarts_interface(molecule)
+            # 세션 상태의 분자 데이터를 직접 전달
+            smarts = generator.create_smarts_interface(st.session_state.molecule_data)
 
             # 생성된 SMARTS를 세션에 저장
             if smarts:
